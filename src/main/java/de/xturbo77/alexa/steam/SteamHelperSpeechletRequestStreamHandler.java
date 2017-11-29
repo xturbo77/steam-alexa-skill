@@ -18,7 +18,7 @@ public class SteamHelperSpeechletRequestStreamHandler extends SpeechletRequestSt
          * Alexa Skill and put the relevant Application Ids in this Set.
          */
         supportedApplicationIds = new HashSet<>();
-        // supportedApplicationIds.add("[unique-value-here]");
+        supportedApplicationIds.add("amzn1.ask.skill.25406815-eee2-423b-9ee1-477b1ee857ff");
     }
 
     public SteamHelperSpeechletRequestStreamHandler() {

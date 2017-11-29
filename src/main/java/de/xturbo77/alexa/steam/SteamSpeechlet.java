@@ -14,7 +14,6 @@ import com.ibasco.agql.protocols.valve.steam.webapi.SteamWebApiClient;
 import com.ibasco.agql.protocols.valve.steam.webapi.interfaces.SteamStorefront;
 import com.ibasco.agql.protocols.valve.steam.webapi.pojos.StoreFeaturedAppInfo;
 import com.ibasco.agql.protocols.valve.steam.webapi.pojos.StoreFeaturedApps;
-import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,14 +24,15 @@ import org.slf4j.LoggerFactory;
 public class SteamSpeechlet implements SpeechletV2 {
 
     private static final Logger LOG = LoggerFactory.getLogger(SteamSpeechlet.class);
-    private static final String STEAM_CLIENT = "SteamClient";
     private static final String REPROMT_TEXT = "Du kannst mich zum Beispiel fragen: "
         + "welche Spiele sind neu und angesagt?";
 
+    private final SteamWebApiClient steamClient = new SteamWebApiClient();
+
     @Override
     public void onSessionStarted(SpeechletRequestEnvelope<SessionStartedRequest> requestEnvelope) {
-        final SteamWebApiClient steamClient = new SteamWebApiClient();
-        requestEnvelope.getSession().setAttribute(STEAM_CLIENT, steamClient);
+        LOG.info("onSessionStarted requestId={}, sessionId={}", requestEnvelope.getRequest().getRequestId(),
+            requestEnvelope.getSession().getSessionId());
     }
 
     @Override
@@ -40,8 +40,7 @@ public class SteamSpeechlet implements SpeechletV2 {
         LOG.info("onLaunch requestId={}, sessionId={}", requestEnvelope.getRequest().getRequestId(),
             requestEnvelope.getSession().getSessionId());
 
-        String speechOutput
-            = "Willkommen zum Steam Helper. " + REPROMT_TEXT;
+        String speechOutput = "Willkommen zum Steam Helper. " + REPROMT_TEXT;
         String repromptText = "Wenn du Hilfe benötigst sag einfach, hilf mir.";
 
         return newAskResponse(speechOutput, repromptText);
@@ -50,44 +49,57 @@ public class SteamSpeechlet implements SpeechletV2 {
     @Override
     public SpeechletResponse onIntent(SpeechletRequestEnvelope<IntentRequest> requestEnvelope) {
         IntentRequest request = requestEnvelope.getRequest();
-        LOG.info("onIntent requestId={}, sessionId={}", request.getRequestId(),
-            requestEnvelope.getSession().getSessionId());
+        LOG.info("onIntent requestId={}, sessionId={}", request.getRequestId(), requestEnvelope.getSession().getSessionId());
 
+        SpeechletResponse response;
         Intent intent = request.getIntent();
         String intentName = (intent != null) ? intent.getName() : null;
 
-        if ("RecipeIntent".equals(intentName)) {
-            SteamWebApiClient steamClient = (SteamWebApiClient) requestEnvelope.getSession().getAttribute(STEAM_CLIENT);
-            return getFeaturedApps(intent, steamClient);
-        } else if ("AMAZON.HelpIntent".equals(intentName)) {
-            return getHelp();
-        } else if ("AMAZON.StopIntent".equals(intentName)) {
-            PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
-            outputSpeech.setText("Goodbye");
-            return SpeechletResponse.newTellResponse(outputSpeech);
-        } else if ("AMAZON.CancelIntent".equals(intentName)) {
-            PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
-            outputSpeech.setText("Tschüss");
-            return SpeechletResponse.newTellResponse(outputSpeech);
-        } else {
+        if (null == intentName) {
             String errorSpeech = "Keine Ahnung was du meinst.... vielleicht bin ich zu blöd.";
-            return newAskResponse(errorSpeech, errorSpeech);
-        }
+            response = newAskResponse(errorSpeech, errorSpeech);
+        } else
+            switch (intentName) {
+                case "FeaturedAppIntent":
+                    try {
+                        response = getFeaturedApps(intent);
+                    } catch (Exception ex) {
+                        LOG.error(ex.getMessage(), ex);
+                        PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
+                        outputSpeech.setText("Ich kann dir momentan leider nicht helfen. Möglicherweise hat steam gerade ein Problem.");
+                        response = SpeechletResponse.newTellResponse(outputSpeech);
+                    }
+                    break;
+                case "AMAZON.HelpIntent":
+                    response = getHelp();
+                    break;
+                case "AMAZON.StopIntent": {
+                    PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
+                    outputSpeech.setText("Tschüss");
+                    response = SpeechletResponse.newTellResponse(outputSpeech);
+                    break;
+                }
+                case "AMAZON.CancelIntent": {
+                    PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
+                    outputSpeech.setText("Tschüss");
+                    response = SpeechletResponse.newTellResponse(outputSpeech);
+                    break;
+                }
+                default:
+                    String errorSpeech = "Keine Ahnung was du meinst.... vielleicht bin ich zu blöd.";
+                    response = newAskResponse(errorSpeech, errorSpeech);
+                    break;
+            }
+        return response;
     }
 
     @Override
     public void onSessionEnded(SpeechletRequestEnvelope<SessionEndedRequest> requestEnvelope) {
-        SteamWebApiClient steamClient = (SteamWebApiClient) requestEnvelope.getSession().getAttribute(STEAM_CLIENT);
-        if (steamClient != null) {
-            try {
-                steamClient.close();
-            } catch (IOException ex) {
-                LOG.error(ex.getMessage(), ex);
-            }
-        }
+        LOG.info("onSessionEnded requestId={}, sessionId={}", requestEnvelope.getRequest().getRequestId(),
+            requestEnvelope.getSession().getSessionId());
     }
 
-    private SpeechletResponse getFeaturedApps(Intent intent, SteamWebApiClient steamClient) {
+    private SpeechletResponse getFeaturedApps(Intent intent) {
         SteamStorefront store = new SteamStorefront(steamClient);
         StoreFeaturedApps featuredApps = store.getFeaturedApps().join();
         StringBuilder sb = new StringBuilder("Neue und angesagte Spiele sind: ");
