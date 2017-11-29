@@ -1,6 +1,7 @@
 package de.xturbo77.alexa.steam;
 
 import com.amazon.speech.speechlet.lambda.SpeechletRequestStreamHandler;
+import com.amazon.speech.speechlet.services.DirectiveServiceClient;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -22,6 +23,6 @@ public class SteamHelperSpeechletRequestStreamHandler extends SpeechletRequestSt
     }
 
     public SteamHelperSpeechletRequestStreamHandler() {
-        super(new SteamSpeechlet(), supportedApplicationIds);
+        super(new SteamSpeechlet(new DirectiveServiceClient()), supportedApplicationIds);
     }
 }
