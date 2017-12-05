@@ -15,8 +15,10 @@ import com.amazon.speech.speechlet.services.DirectiveEnvelope;
 import com.amazon.speech.speechlet.services.DirectiveEnvelopeHeader;
 import com.amazon.speech.speechlet.services.DirectiveService;
 import com.amazon.speech.speechlet.services.SpeakDirective;
+import com.amazon.speech.ui.OutputSpeech;
 import com.amazon.speech.ui.PlainTextOutputSpeech;
 import com.amazon.speech.ui.Reprompt;
+import com.amazon.speech.ui.SsmlOutputSpeech;
 import com.ibasco.agql.protocols.valve.steam.webapi.SteamWebApiClient;
 import com.ibasco.agql.protocols.valve.steam.webapi.interfaces.SteamStorefront;
 import com.ibasco.agql.protocols.valve.steam.webapi.pojos.StoreFeaturedAppInfo;
@@ -119,20 +121,33 @@ public class SteamSpeechlet implements SpeechletV2 {
     private SpeechletResponse getFeaturedApps(Intent intent) {
         SteamStorefront store = new SteamStorefront(steamClient);
         StoreFeaturedApps featuredApps = store.getFeaturedApps().join();
-        StringBuilder sb = new StringBuilder("Neue und angesagte Spiele sind: ");
+        StringBuilder sb = new StringBuilder("<speak>");
+        sb.append("<s>Neue und angesagte Spiele sind:</s>");
         for (StoreFeaturedAppInfo info : featuredApps.getWindowsFeaturedGames()) {
-            sb.append(info.getName()).append(" für ")
+            sb.append("<p>").append(info.getName()).append(" für ")
                 .append((double) info.getFinalPrice() / 100)
                 .append(info.getCurrency())
-                .append(". ");
+                .append(".</p>");
         }
-        return newAskResponse(sb.toString(), REPROMT_TEXT);
+        sb.append("</speak>");
+        SsmlOutputSpeech ssmlOutputSpeech = new SsmlOutputSpeech();
+        ssmlOutputSpeech.setSsml(sb.toString());
+        return newAskResponse(ssmlOutputSpeech, REPROMT_TEXT);
     }
 
     private SpeechletResponse getHelp() {
         String speechOutput
             = "Jetzt sollte ich dir wohl helfen... kann ich aber leider noch nicht.";
         return newAskResponse(speechOutput, REPROMT_TEXT);
+    }
+
+    private SpeechletResponse newAskResponse(OutputSpeech outputSpeech, String repromptText) {
+        PlainTextOutputSpeech repromptOutputSpeech = new PlainTextOutputSpeech();
+        repromptOutputSpeech.setText(repromptText);
+        Reprompt reprompt = new Reprompt();
+        reprompt.setOutputSpeech(repromptOutputSpeech);
+
+        return SpeechletResponse.newAskResponse(outputSpeech, reprompt);
     }
 
     /**
@@ -145,13 +160,7 @@ public class SteamSpeechlet implements SpeechletV2 {
     private SpeechletResponse newAskResponse(String stringOutput, String repromptText) {
         PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
         outputSpeech.setText(stringOutput);
-
-        PlainTextOutputSpeech repromptOutputSpeech = new PlainTextOutputSpeech();
-        repromptOutputSpeech.setText(repromptText);
-        Reprompt reprompt = new Reprompt();
-        reprompt.setOutputSpeech(repromptOutputSpeech);
-
-        return SpeechletResponse.newAskResponse(outputSpeech, reprompt);
+        return newAskResponse(outputSpeech, repromptText);
     }
 
     /**
