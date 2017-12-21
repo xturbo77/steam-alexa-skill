@@ -2,9 +2,11 @@ package de.xturbo77.alexa.steam;
 
 import com.amazon.speech.json.SpeechletRequestEnvelope;
 import com.amazon.speech.slu.Intent;
+import com.amazon.speech.slu.Slot;
 import com.amazon.speech.speechlet.Context;
 import com.amazon.speech.speechlet.IntentRequest;
 import com.amazon.speech.speechlet.LaunchRequest;
+import com.amazon.speech.speechlet.Session;
 import com.amazon.speech.speechlet.SessionEndedRequest;
 import com.amazon.speech.speechlet.SessionStartedRequest;
 import com.amazon.speech.speechlet.SpeechletResponse;
@@ -23,8 +25,11 @@ import com.amazon.speech.ui.PlainTextOutputSpeech;
 import com.amazon.speech.ui.Reprompt;
 import com.amazon.speech.ui.SsmlOutputSpeech;
 import com.amazon.speech.ui.StandardCard;
+import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
 import com.ibasco.agql.protocols.valve.steam.webapi.pojos.StoreFeaturedAppInfo;
 import com.ibasco.agql.protocols.valve.steam.webapi.pojos.StoreFeaturedApps;
+import de.xturbo77.alexa.steam.storage.SteamUser;
+import de.xturbo77.alexa.steam.storage.SteamUserDynamoDbClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,27 +40,52 @@ import org.slf4j.LoggerFactory;
 public class SteamSpeechlet implements SpeechletV2 {
 
     private static final Logger LOG = LoggerFactory.getLogger(SteamSpeechlet.class);
+
     private static final String REPROMT_TEXT = "Du kannst mich zum Beispiel fragen: "
         + "welche Spiele sind neu und angesagt?";
 
     private final DirectiveService directiveService;
 
+    private SteamUserDynamoDbClient dbClient;
+    private SteamUser steamUser;
+
     public SteamSpeechlet(DirectiveService directiveService) {
         this.directiveService = directiveService;
+    }
+
+    private void initializeComponents() {
+        if (dbClient == null) {
+            AmazonDynamoDBClient amazonDynamoDBClient = new AmazonDynamoDBClient();
+            dbClient = new SteamUserDynamoDbClient(amazonDynamoDBClient);
+        }
     }
 
     @Override
     public void onSessionStarted(SpeechletRequestEnvelope<SessionStartedRequest> requestEnvelope) {
         LOG.info("onSessionStarted requestId={}, sessionId={}", requestEnvelope.getRequest().getRequestId(),
             requestEnvelope.getSession().getSessionId());
+
+        initializeComponents();
+
+        User user = requestEnvelope.getSession().getUser();
+        steamUser = new SteamUser(user.getUserId());
+        steamUser = dbClient.loadItem(steamUser);
+        LOG.info("loaded steamuser from dynamodb: {}", steamUser);
     }
 
     @Override
     public SpeechletResponse onLaunch(SpeechletRequestEnvelope<LaunchRequest> requestEnvelope) {
+        Session session = requestEnvelope.getSession();
         LOG.info("onLaunch requestId={}, sessionId={}", requestEnvelope.getRequest().getRequestId(),
-            requestEnvelope.getSession().getSessionId());
+            session.getSessionId());
 
-        String speechOutput = "Willkommen zum Steam Helper. " + REPROMT_TEXT;
+        String speechOutput = "Willkommen zum Steam Helper. ";
+        if (steamUser != null) {
+            speechOutput = speechOutput + REPROMT_TEXT;
+        } else {
+            speechOutput = speechOutput + "Ich kenne deine Steam ID noch nicht. "
+                + "Wenn du sie mit sagen möchtest sage einfach: 'Alexa, sag steam meine Id lautet: Gefolgt von deiner Id'";
+        }
         String repromptText = "Wenn du Hilfe benötigst sag einfach, hilf mir.";
 
         return newAskResponse(speechOutput, repromptText);
@@ -65,8 +95,11 @@ public class SteamSpeechlet implements SpeechletV2 {
     public SpeechletResponse onIntent(SpeechletRequestEnvelope<IntentRequest> requestEnvelope) {
         IntentRequest request = requestEnvelope.getRequest();
         User user = requestEnvelope.getSession().getUser();
+        Session session = requestEnvelope.getSession();
 
-        LOG.info("onIntent requestId={}, userId={} sessionId={}", request.getRequestId(), user.getUserId(), requestEnvelope.getSession().getSessionId());
+        LOG.info("onIntent requestId={}, userId={} sessionId={}", request.getRequestId(), user.getUserId(), session.getSessionId());
+
+        initializeComponents();
 
         SpeechletResponse response;
         Intent intent = request.getIntent();
@@ -77,6 +110,7 @@ public class SteamSpeechlet implements SpeechletV2 {
             response = newAskResponse(errorSpeech, errorSpeech);
             response.setNullableShouldEndSession(Boolean.TRUE);
         } else {
+            LOG.info("Intent: {}", intentName);
             switch (intentName) {
                 case Intents.FEATURED_APP: {
                     try {
@@ -93,6 +127,13 @@ public class SteamSpeechlet implements SpeechletV2 {
                         outputSpeech.setText("Ich kann dir momentan leider nicht helfen. Möglicherweise hat steam gerade ein Problem.");
                         response = SpeechletResponse.newTellResponse(outputSpeech);
                     }
+                    break;
+                }
+                case Intents.TELL_STEAMID: {
+                    Slot idSlot = request.getIntent().getSlot("id");
+                    PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
+                    outputSpeech.setText("TODO: SteamID speichern: " + idSlot.getValue());
+                    response = SpeechletResponse.newTellResponse(outputSpeech);
                     break;
                 }
                 case Intents.AMAZON_HELP: {
@@ -137,8 +178,8 @@ public class SteamSpeechlet implements SpeechletV2 {
             sbPlain.append(FormatterUtils.formatGame(info, false));
             if (img == null) {
                 img = new Image();
-                img.setSmallImageUrl(info.getSmallCapsuleImageUrl());
-                img.setLargeImageUrl(info.getLargeCapsuleImageUrl());
+                img.setSmallImageUrl(info.getSmallCapsuleImageUrl().replace("http:", "https:"));
+                img.setLargeImageUrl(info.getLargeCapsuleImageUrl().replace("http:", "https:"));
                 card.setImage(img);
             }
         }
