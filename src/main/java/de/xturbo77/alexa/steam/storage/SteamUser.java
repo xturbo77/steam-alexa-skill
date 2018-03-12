@@ -38,4 +38,9 @@ public class SteamUser {
     public void setSteamId(String steamid) {
         this.steamid = steamid;
     }
+
+    @Override
+    public String toString() {
+        return "AmazonUserId:" + getAmazonUserId() + " SteamID: " + getSteamId();
+    }
 }

@@ -1,9 +1,10 @@
 package de.xturbo77.alexa.steam;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import com.amazon.speech.json.SpeechletRequestEnvelope;
 import com.amazon.speech.slu.Intent;
-import com.amazon.speech.slu.Slot;
-import com.amazon.speech.speechlet.Context;
 import com.amazon.speech.speechlet.IntentRequest;
 import com.amazon.speech.speechlet.LaunchRequest;
 import com.amazon.speech.speechlet.Session;
@@ -12,26 +13,20 @@ import com.amazon.speech.speechlet.SessionStartedRequest;
 import com.amazon.speech.speechlet.SpeechletResponse;
 import com.amazon.speech.speechlet.SpeechletV2;
 import com.amazon.speech.speechlet.User;
-import com.amazon.speech.speechlet.interfaces.system.SystemInterface;
-import com.amazon.speech.speechlet.interfaces.system.SystemState;
-import com.amazon.speech.speechlet.services.DirectiveEnvelope;
-import com.amazon.speech.speechlet.services.DirectiveEnvelopeHeader;
-import com.amazon.speech.speechlet.services.DirectiveService;
-import com.amazon.speech.speechlet.services.SpeakDirective;
-import com.amazon.speech.ui.Card;
-import com.amazon.speech.ui.Image;
-import com.amazon.speech.ui.OutputSpeech;
-import com.amazon.speech.ui.PlainTextOutputSpeech;
-import com.amazon.speech.ui.Reprompt;
-import com.amazon.speech.ui.SsmlOutputSpeech;
-import com.amazon.speech.ui.StandardCard;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
-import com.ibasco.agql.protocols.valve.steam.webapi.pojos.StoreFeaturedAppInfo;
-import com.ibasco.agql.protocols.valve.steam.webapi.pojos.StoreFeaturedApps;
-import de.xturbo77.alexa.steam.storage.SteamUser;
-import de.xturbo77.alexa.steam.storage.SteamUserDynamoDbClient;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import de.xturbo77.alexa.steam.handler.AbstractIntentHandler;
+import de.xturbo77.alexa.steam.handler.DefaultIntentHandler;
+import de.xturbo77.alexa.steam.handler.ExitIntentHandler;
+import de.xturbo77.alexa.steam.handler.FeaturedGamesIntentHandler;
+import de.xturbo77.alexa.steam.handler.HelpIntentHandler;
+import de.xturbo77.alexa.steam.handler.OnLaunchHandler;
+import de.xturbo77.alexa.steam.handler.TellSteamIdIntentHandler;
+import de.xturbo77.alexa.steam.storage.SteamUser;
+import de.xturbo77.alexa.steam.storage.SteamUserDynamoDbClient;
 
 /**
  *
@@ -41,16 +36,12 @@ public class SteamSpeechlet implements SpeechletV2 {
 
     private static final Logger LOG = LoggerFactory.getLogger(SteamSpeechlet.class);
 
-    private static final String REPROMT_TEXT = "Du kannst mich zum Beispiel fragen: "
-        + "welche Spiele sind neu und angesagt?";
-
-    private final DirectiveService directiveService;
-
     private SteamUserDynamoDbClient dbClient;
     private SteamUser steamUser;
 
-    public SteamSpeechlet(DirectiveService directiveService) {
-        this.directiveService = directiveService;
+    private Map<String, AbstractIntentHandler> intentHandlers;
+
+    public SteamSpeechlet() {
     }
 
     private void initializeComponents() {
@@ -58,6 +49,14 @@ public class SteamSpeechlet implements SpeechletV2 {
             AmazonDynamoDBClient amazonDynamoDBClient = new AmazonDynamoDBClient();
             dbClient = new SteamUserDynamoDbClient(amazonDynamoDBClient);
         }
+
+        intentHandlers = new HashMap<>();
+        intentHandlers.put(Intents.TELL_STEAMID, new TellSteamIdIntentHandler());
+        intentHandlers.put(Intents.FEATURED_APP, new FeaturedGamesIntentHandler());
+        intentHandlers.put(Intents.AMAZON_HELP, new HelpIntentHandler());
+        AbstractIntentHandler exitHandler = new ExitIntentHandler();
+        intentHandlers.put(Intents.AMAZON_CANCEL, exitHandler);
+        intentHandlers.put(Intents.AMAZON_STOP, exitHandler);
     }
 
     @Override
@@ -75,20 +74,8 @@ public class SteamSpeechlet implements SpeechletV2 {
 
     @Override
     public SpeechletResponse onLaunch(SpeechletRequestEnvelope<LaunchRequest> requestEnvelope) {
-        Session session = requestEnvelope.getSession();
-        LOG.info("onLaunch requestId={}, sessionId={}", requestEnvelope.getRequest().getRequestId(),
-            session.getSessionId());
-
-        String speechOutput = "Willkommen zum Steam Helper. ";
-        if (steamUser != null) {
-            speechOutput = speechOutput + REPROMT_TEXT;
-        } else {
-            speechOutput = speechOutput + "Ich kenne deine Steam ID noch nicht. "
-                + "Wenn du sie mit sagen möchtest sage einfach: 'Alexa, sag steam meine Id lautet: Gefolgt von deiner Id'";
-        }
-        String repromptText = "Wenn du Hilfe benötigst sag einfach, hilf mir.";
-
-        return newAskResponse(speechOutput, repromptText);
+        OnLaunchHandler onLaunchHandler = new OnLaunchHandler();
+        return onLaunchHandler.onLaunch(requestEnvelope, steamUser);
     }
 
     @Override
@@ -101,56 +88,29 @@ public class SteamSpeechlet implements SpeechletV2 {
 
         initializeComponents();
 
-        SpeechletResponse response;
+        SpeechletResponse response = null;
         Intent intent = request.getIntent();
         String intentName = (intent != null) ? intent.getName() : null;
 
+        AbstractIntentHandler defaultHandler = new DefaultIntentHandler();
         if (null == intentName) {
-            String errorSpeech = "Keine Ahnung was du meinst.... vielleicht bin ich zu blöd.";
-            response = newAskResponse(errorSpeech, errorSpeech);
-            response.setNullableShouldEndSession(Boolean.TRUE);
+            response = defaultHandler.onIntent(intent, user, session, dbClient, requestEnvelope);
         } else {
             LOG.info("Intent: {}", intentName);
             switch (intentName) {
-                case Intents.FEATURED_APP: {
-                    try {
-                        SystemState systemState = getSystemState(requestEnvelope.getContext());
-                        String apiEndpoint = systemState.getApiEndpoint();
-                        // Dispatch a progressive response to engage the user while fetching events
-                        LOG.info("systemState: {}, apiEndpoint: {}", systemState, apiEndpoint);
-                        dispatchProgressiveResponse(request.getRequestId(), "Einen Moment bitte...", systemState, apiEndpoint);
-                        response = getFeaturedApps(intent);
-                        response.setNullableShouldEndSession(Boolean.TRUE);
-                    } catch (Exception ex) {
-                        LOG.error(ex.getMessage(), ex);
-                        PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
-                        outputSpeech.setText("Ich kann dir momentan leider nicht helfen. Möglicherweise hat steam gerade ein Problem.");
-                        response = SpeechletResponse.newTellResponse(outputSpeech);
+                case Intents.FEATURED_APP:
+                case Intents.TELL_STEAMID: 
+                case Intents.AMAZON_HELP:
+                case Intents.AMAZON_STOP:
+                case Intents.AMAZON_CANCEL: {
+                    AbstractIntentHandler handler = intentHandlers.get(intentName);
+                    if(handler != null) {
+                        response = handler.onIntent(intent, user, session, dbClient, requestEnvelope);
                     }
                     break;
                 }
-                case Intents.TELL_STEAMID: {
-                    Slot idSlot = request.getIntent().getSlot("id");
-                    PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
-                    outputSpeech.setText("TODO: SteamID speichern: " + idSlot.getValue());
-                    response = SpeechletResponse.newTellResponse(outputSpeech);
-                    break;
-                }
-                case Intents.AMAZON_HELP: {
-                    response = getHelp();
-                    break;
-                }
-                case Intents.AMAZON_STOP: {
-                    response = sayGoodbye();
-                    break;
-                }
-                case Intents.AMAZON_CANCEL: {
-                    response = sayGoodbye();
-                    break;
-                }
                 default: {
-                    String errorSpeech = "Keine Ahnung was du meinst.... vielleicht bin ich zu blöd.";
-                    response = newAskResponse(errorSpeech, errorSpeech);
+                    response = defaultHandler.onIntent(intent, user, session, dbClient, requestEnvelope);
                     break;
                 }
             }
@@ -163,100 +123,5 @@ public class SteamSpeechlet implements SpeechletV2 {
         LOG.info("onSessionEnded requestId={}, sessionId={}", requestEnvelope.getRequest().getRequestId(),
             requestEnvelope.getSession().getSessionId());
     }
-
-    private SpeechletResponse getFeaturedApps(Intent intent) {
-        SteamClient sc = new SteamClient(0);
-        StoreFeaturedApps featuredApps = sc.getFeaturedApps();
-        StandardCard card = new StandardCard();
-        card.setTitle("Neue und angesagte Spiele");
-        Image img = null;
-        StringBuilder sbSSML = new StringBuilder("<speak>");
-        StringBuilder sbPlain = new StringBuilder();
-        sbSSML.append("<s>Neue und angesagte Spiele sind:</s>");
-        for (StoreFeaturedAppInfo info : featuredApps.getWindowsFeaturedGames()) {
-            sbSSML.append(FormatterUtils.formatGame(info, true));
-            sbPlain.append(FormatterUtils.formatGame(info, false));
-            if (img == null) {
-                img = new Image();
-                img.setSmallImageUrl(info.getSmallCapsuleImageUrl().replace("http:", "https:"));
-                img.setLargeImageUrl(info.getLargeCapsuleImageUrl().replace("http:", "https:"));
-                card.setImage(img);
-            }
-        }
-        sbSSML.append("</speak>");
-        card.setText(sbPlain.toString());
-        SsmlOutputSpeech ssmlOutputSpeech = new SsmlOutputSpeech();
-        ssmlOutputSpeech.setSsml(sbSSML.toString());
-
-        return newAskResponse(ssmlOutputSpeech, REPROMT_TEXT, card);
-    }
-
-    private SpeechletResponse sayGoodbye() {
-        SsmlOutputSpeech ssmlOutputSpeech = new SsmlOutputSpeech();
-        ssmlOutputSpeech.setSsml("<speak><say-as interpret-as=\"interjection\">bis dann</say-as></speak>");
-        return SpeechletResponse.newTellResponse(ssmlOutputSpeech);
-    }
-
-    private SpeechletResponse getHelp() {
-        String speechOutput
-            = "Jetzt sollte ich dir wohl helfen... kann ich aber leider noch nicht.";
-        return newAskResponse(speechOutput, REPROMT_TEXT);
-    }
-
-    private SpeechletResponse newAskResponse(OutputSpeech outputSpeech, String repromptText, Card card) {
-        PlainTextOutputSpeech repromptOutputSpeech = new PlainTextOutputSpeech();
-        repromptOutputSpeech.setText(repromptText);
-        Reprompt reprompt = new Reprompt();
-        reprompt.setOutputSpeech(repromptOutputSpeech);
-        if (card != null) {
-            return SpeechletResponse.newAskResponse(outputSpeech, reprompt, card);
-        } else {
-            return SpeechletResponse.newAskResponse(outputSpeech, reprompt);
-        }
-    }
-
-    private SpeechletResponse newAskResponse(OutputSpeech outputSpeech, String repromptText) {
-        return newAskResponse(outputSpeech, repromptText, null);
-    }
-
-    private SpeechletResponse newAskResponse(String stringOutput, String repromptText) {
-        PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
-        outputSpeech.setText(stringOutput);
-        return newAskResponse(outputSpeech, repromptText);
-    }
-
-    /**
-     * Dispatches a progressive response.
-     *
-     * @param requestId the unique request identifier
-     * @param text the text of the progressive response to send
-     * @param systemState the SystemState object
-     * @param apiEndpoint the Alexa API endpoint
-     */
-    private void dispatchProgressiveResponse(String requestId, String text, SystemState systemState, String apiEndpoint) {
-        DirectiveEnvelopeHeader header = DirectiveEnvelopeHeader.builder().withRequestId(requestId).build();
-        SpeakDirective directive = SpeakDirective.builder().withSpeech(text).build();
-        DirectiveEnvelope directiveEnvelope = DirectiveEnvelope.builder()
-            .withHeader(header).withDirective(directive).build();
-
-        if (systemState.getApiAccessToken() != null && !systemState.getApiAccessToken().isEmpty()) {
-            String token = systemState.getApiAccessToken();
-            try {
-                LOG.info("enqueue progressive response with token: {}", token);
-                directiveService.enqueue(directiveEnvelope, apiEndpoint, token);
-            } catch (Exception e) {
-                LOG.error("Failed to dispatch a progressive response", e);
-            }
-        }
-    }
-
-    /**
-     * Helper method that retrieves the system state from the request context.
-     *
-     * @param context request context.
-     * @return SystemState the systemState
-     */
-    private SystemState getSystemState(Context context) {
-        return context.getState(SystemInterface.class, SystemState.class);
-    }
+    
 }

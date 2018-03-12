@@ -4,12 +4,16 @@ import com.amazonaws.regions.Region;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
  * @author schmidt
  */
 public class SteamUserDynamoDbClient {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SteamUserDynamoDbClient.class);
 
     private final AmazonDynamoDBClient dynamoDBClient;
 
@@ -21,6 +25,7 @@ public class SteamUserDynamoDbClient {
     public void saveItem(final SteamUser steamUser) {
         DynamoDBMapper mapper = createDynamoDBMapper();
         mapper.save(steamUser);
+        LOG.info("saved steam user: {}", steamUser);
     }
 
     public SteamUser loadItem(SteamUser steamUser) {
