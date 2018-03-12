@@ -41,7 +41,7 @@ public class FeaturedGamesIntentHandler extends AbstractIntentHandler {
         } catch (Exception ex) {
             LOG.error(ex.getMessage(), ex);
             PlainTextOutputSpeech outputSpeech = new PlainTextOutputSpeech();
-            outputSpeech.setText("Ich kann dir momentan leider nicht helfen. MÃ¶glicherweise hat steam gerade ein Problem.");
+            outputSpeech.setText("Ich kann dir momentan leider nicht helfen. Möglicherweise hat Steam gerade ein Problem.");
             response = SpeechletResponse.newTellResponse(outputSpeech);
         }
         return response;

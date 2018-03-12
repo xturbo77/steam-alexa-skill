@@ -52,7 +52,7 @@ public class TellSteamIdIntentHandler extends AbstractIntentHandler {
             return SpeechletResponse.newTellResponse(outputSpeech);
         } catch(NullPointerException ex) {
             LOG.warn("Missing slot(s) for SteamID", ex);
-            String text = "Das scheint keine gÃ¼ltige Steam ID zu sein. Deine Steam ID muss eine 17-stellige Nummer sein.";
+            String text = "Das scheint keine gültige Steam ID zu sein. Deine Steam ID muss eine 17-stellige Nummer sein.";
             return newAskResponse(text, text);
         }
     }

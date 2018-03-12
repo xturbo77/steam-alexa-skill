@@ -31,11 +31,11 @@ public class OnLaunchHandler extends AbstractHandler {
             speechOutput = speechOutput + AbstractIntentHandler.REPROMT_TEXT;
         } else {
             speechOutput = speechOutput + "Ich kenne deine Steam ID noch nicht. "
-                + "Wenn du sie mit sagen mÃ¶chtest sage einfach: 'Alexa, sag steam meine account nummer lautet: Gefolgt von deiner 17 stelligen Steam ID'."
+                + "Wenn du sie mir sagen möchtest sage einfach: 'Alexa, sag steam meine account nummer lautet: Gefolgt von deiner 17 stelligen Steam ID'. "
                 + "Wenn du deine Steam ID nicht kennst, besuche die Seite https://steamidfinder.com/.";
         }
         card.setText(speechOutput);
-        String repromptText = "Wenn du Hilfe benÃ¶tigst sag einfach, hilf mir.";
+        String repromptText = "Wenn du Hilfe benötigst sag einfach, hilf mir.";
 
         return newAskResponse(speechOutput, repromptText, card);
     }

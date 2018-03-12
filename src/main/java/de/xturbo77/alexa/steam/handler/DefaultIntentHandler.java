@@ -14,7 +14,7 @@ public class DefaultIntentHandler extends AbstractIntentHandler {
 	@Override
     public SpeechletResponse onIntent(Intent intent, User user, Session session, SteamUserDynamoDbClient dbClient,
         SpeechletRequestEnvelope<IntentRequest> requestEnvelope) {
-        String errorSpeech = "Keine Ahnung was du meinst.... vielleicht bin ich zu blÃ¶d.";
+        String errorSpeech = "Keine Ahnung was du meinst.... vielleicht bin ich zu blöd.";
         return newAskResponse(errorSpeech, errorSpeech);
 	}
 
